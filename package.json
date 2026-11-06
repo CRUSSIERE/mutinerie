@@ -1,0 +1,14 @@
+{
+  "name": "mutinerie",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mutinerie : jeu de cartes de déduction pirate en ligne, 2 à 5 joueurs.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
