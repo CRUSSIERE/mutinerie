@@ -96,6 +96,8 @@ input{font:inherit;font-size:1.05rem;padding:11px 12px;border-radius:10px;border
 .card{width:clamp(132px,42vw,168px);min-height:214px;background:var(--bone);color:var(--ink);border-radius:12px;padding:11px;display:flex;flex-direction:column;gap:5px;text-align:left;border:2px solid var(--bone);font:inherit;box-shadow:0 6px 18px rgba(0,0,0,.45)}
 button.card{cursor:pointer;transition:transform .15s}
 button.card[aria-pressed="true"]{transform:translateY(-8px);outline:3px solid var(--brass);outline-offset:2px}
+.card .pic{width:100%;aspect-ratio:3/2;object-fit:cover;border-radius:7px;background:#d9cfb8}
+select{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--plank);background:var(--sea);color:var(--bone);min-height:44px}
 .card .v{font-family:var(--f-display);font-size:2.5rem;line-height:1;color:var(--blood)}
 .card .n{font-family:var(--f-display);font-size:1.4rem;line-height:1}
 .card .t{font-size:.84rem;line-height:1.28}
@@ -126,15 +128,16 @@ summary{cursor:pointer;font-family:var(--f-display);font-size:1.3rem;color:var(-
   <details class="rules">
     <summary>Règles du jeu</summary>
     <div class="rules-body">
-      <p><b>But.</b> Gagner des doublons en remportant des manches : 5 doublons à 2 joueurs, 4 à 3 joueurs, 3 à 4 ou 5 joueurs.</p>
-      <p><b>Mise en place.</b> Les 18 cartes sont mélangées. Une carte est écartée face cachée. À 2 joueurs, deux autres cartes sont écartées face visible. Chaque joueur reçoit une carte.</p>
+      <p><b>But.</b> Gagner des doublons en remportant des manches : 6 doublons à 2 joueurs, 5 à 3 joueurs, 4 à 4 joueurs, 3 à 5 ou 6 joueurs.</p>
+      <p><b>Mise en place.</b> Les 21 cartes sont mélangées. Une carte est écartée face cachée. À 2 joueurs, trois autres cartes sont écartées face visible. Chaque joueur reçoit une carte.</p>
       <p><b>Ton tour.</b> Tu pioches une carte, puis tu joues l'une de tes deux cartes et tu appliques son effet. Les cartes jouées restent visibles sur la table.</p>
       <ul>
-        <li>Un joueur protégé par le Cuistot ne peut pas être ciblé.</li>
-        <li>S'il n'y a aucune cible possible, la carte est jouée sans effet.</li>
+        <li>Un joueur protégé par la carte <span data-r="4"></span> ne peut pas être ciblé.</li>
+        <li>S'il n'y a aucune autre cible possible, la carte est jouée sans effet (la carte <span data-r="5"></span> doit alors te viser toi-même).</li>
+        <li>Si tu as la carte <span data-r="8"></span> avec la carte <span data-r="7"></span> ou <span data-r="5"></span>, tu dois jouer la carte <span data-r="8"></span>.</li>
         <li>Un joueur qui quitte la manche révèle et défausse sa carte.</li>
       </ul>
-      <p><b>Fin de manche.</b> Quand il ne reste qu'un joueur, ou quand la pioche est vide à la fin d'un tour. Les joueurs restants révèlent leur carte : la plus forte gagne. En cas d'égalité, le plus grand total de cartes jouées départage ; sinon tous les ex æquo gagnent un doublon. Le gagnant commence la manche suivante.</p>
+      <p><b>Fin de manche.</b> Quand il ne reste qu'un joueur, ou quand la pioche est vide à la fin d'un tour. Les joueurs restants révèlent leur carte : la plus forte gagne. En cas d'égalité, tous les ex æquo gagnent un doublon. Si un seul joueur encore en lice a joué ou défaussé une carte <span data-r="0"></span>, il gagne en plus un doublon. Le gagnant commence la manche suivante (tirage au sort entre ex æquo). Si plusieurs joueurs atteignent le but en même temps, ils gagnent tous.</p>
       <p><b>Les 10 rôles</b></p>
       <ul id="roleList"></ul>
     </div>
@@ -142,20 +145,11 @@ summary{cursor:pointer;font-family:var(--f-display);font-size:1.3rem;color:var(-
 </template>
 
 <script>
-const ROLES = {
-  0:{name:'Rat de cale', n:1, txt:"Regarde en secret la carte écartée face cachée."},
-  1:{name:'Moussaillon', n:5, txt:"Accuse un autre joueur : nomme un rôle (sauf Moussaillon). S'il l'a en main, il quitte la manche."},
-  2:{name:'Vigie',       n:2, txt:"Regarde en secret la carte d'un autre joueur."},
-  3:{name:'Bretteur',    n:2, txt:"Duel avec un autre joueur : comparez vos cartes en secret. La plus faible quitte la manche. Égalité : rien."},
-  4:{name:'Cuistot',     n:2, txt:"Personne ne peut te cibler jusqu'à ton prochain tour."},
-  5:{name:'Cartographe', n:2, txt:"Regarde la carte du dessus de la pioche, puis laisse-la ou glisse-la sous la pioche."},
-  6:{name:'Canonnier',   n:1, txt:"Un joueur (toi compris) défausse sa carte sans effet et en pioche une nouvelle."},
-  7:{name:'Second',      n:1, txt:"Choisis deux joueurs (toi compris) : ils échangent leurs cartes."},
-  8:{name:'Sirène',      n:1, txt:"Chaque joueur non protégé passe sa carte au joueur non protégé suivant."},
-  9:{name:'Trésor',      n:1, txt:"Si tu défausses le Trésor, pour quelque raison que ce soit, tu quittes la manche."},
-};
-const TARGETED=[1,2,3,6,7], GUESSABLE=[0,2,3,4,5,6,7,8,9];
-const R=v=>`${ROLES[v].name} (${v})`;
+// Noms, effets et illustrations des rôles : viennent du thème choisi (serveur).
+let ROLES=null;
+const TARGETED=[1,2,3,5,7], GUESSABLE=[0,2,3,4,5,6,7,8,9];
+const nm=v=>esc(ROLES[v].name);
+const R=v=>esc(`${ROLES[v].name} (${v})`);
 const $=s=>document.querySelector(s);
 const app=$('#app');
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -163,7 +157,7 @@ const store={
   get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
   set(k,v){ try{ v==null?localStorage.removeItem(k):localStorage.setItem(k,v); }catch(e){} },
 };
-const fresh=()=>({idx:null,t:[],guess:null});
+const fresh=()=>({idx:null,t:[],guess:null,flip:false});
 
 let V=null, prev=null, sel=fresh(), es=null, busy=false, err='', conn='', homeMsg='';
 let code=null, token=null, prefill='';
@@ -173,6 +167,7 @@ function boot(){
   prefill=(new URLSearchParams(location.search).get('r')||'').toUpperCase().replace(/[^A-Z]/g,'').slice(0,4);
   const c=prefill||store.get('mutinerie:last');
   const t=c?store.get('mutinerie:'+c):null;
+  fetch('/api/themes').then(r=>r.json()).then(j=>{ if(!ROLES){ ROLES=j.themes[0].roles; render(); } }).catch(()=>{});
   if(c&&t){ code=c; token=t; connect(); } else render();
 }
 function enter(c,t){
@@ -199,7 +194,7 @@ function connect(){
     if(!V||stateKey(V)!==stateKey(v)) sel=fresh();
     const myTurnNow=v.phase==='play'&&v.cur===v.you, myTurnBefore=V&&V.phase==='play'&&V.cur===V.you;
     if(myTurnNow&&!myTurnBefore){ try{ navigator.vibrate&&navigator.vibrate(80); }catch(x){} }
-    prev=V; V=v; conn=''; render();
+    prev=V; V=v; ROLES=v.roles; conn=''; render();
   };
   es.addEventListener('gone',()=>leave("Ce salon n'existe plus : le serveur a peut-être redémarré. Crée un nouveau salon."));
   es.onerror=()=>{ if(es&&es.readyState!==2){ conn='Connexion perdue, reconnexion…'; render(); } };
@@ -222,12 +217,14 @@ async function send(body){
 // ---------- Rendu ----------
 function card(v,tag='div',attrs=''){
   const r=ROLES[v];
-  return `<${tag} class="card" ${attrs}><span class="v">${v}</span><span class="n">${r.name}</span><span class="t">${r.txt}</span><span class="k">${r.n} exemplaire${r.n>1?'s':''}</span></${tag}>`;
+  return `<${tag} class="card" ${attrs}>${r.img?`<img class="pic" src="${esc(r.img)}" alt="">`:''}<span class="v">${v}</span><span class="n">${esc(r.name)}</span><span class="t">${esc(r.txt)}</span><span class="k">${r.n} exemplaire${r.n>1?'s':''}</span></${tag}>`;
 }
-const mini=(v,isNew)=>`<span class="mini ${isNew?'new':''}" title="${ROLES[v].name}" aria-label="${R(v)}">${v}</span>`;
+const mini=(v,isNew)=>`<span class="mini ${isNew?'new':''}" title="${nm(v)}" aria-label="${R(v)}">${v}</span>`;
 function rules(){
+  if(!ROLES) return '';
   const n=$('#rulesTpl').content.cloneNode(true);
-  n.querySelector('#roleList').innerHTML=Object.keys(ROLES).map(v=>`<li><b>${v} · ${ROLES[v].name}</b> (×${ROLES[v].n}) : ${ROLES[v].txt}</li>`).join('');
+  n.querySelectorAll('[data-r]').forEach(e=>{ e.textContent=ROLES[e.dataset.r].name; });
+  n.querySelector('#roleList').innerHTML=ROLES.map((r,v)=>`<li><b>${v} · ${esc(r.name)}</b> (×${r.n}) : ${esc(r.txt)}</li>`).join('');
   const d=document.createElement('div'); d.appendChild(n); return d.innerHTML;
 }
 
@@ -240,7 +237,7 @@ function homeHTML(){
   const create=`<section class="panel"><h2>Créer un salon</h2>
     <form id="createForm"><label for="cname">Ton nom</label><input id="cname" maxlength="20" autocomplete="nickname" required value="${name}">
     <button class="btn" type="submit">Créer le salon</button></form></section>`;
-  return `<section class="panel"><h1>Mutinerie</h1><p class="muted">Jeu de déduction pirate pour 2 à 5 joueurs, chacun sur son téléphone. Une carte en main, une carte piochée, une carte jouée.</p></section>
+  return `<section class="panel"><h1>Mutinerie</h1><p class="muted">Jeu de déduction pirate pour 2 à 6 joueurs, chacun sur son téléphone. Une carte en main, une carte piochée, une carte jouée.</p></section>
     ${homeMsg?`<p class="warn">${esc(homeMsg)}</p>`:''}
     ${prefill?join+create:create+join}
     <p class="err" id="homeErr" role="alert"></p>${rules()}`;
@@ -252,7 +249,11 @@ function lobbyHTML(){
     <p class="tag">Salon</p><div class="code">${esc(V.code)}</div>
     <p>Envoie ce lien à tes potes pour qu'ils montent à bord :</p>
     <div class="share"><input id="shareLink" readonly value="${esc(link)}" aria-label="Lien du salon"><button class="btn" type="button" data-act="share">Partager</button></div>
-    <p class="tag">Équipage (${n}/5)</p>
+    <p class="tag">Personnages</p>
+    ${V.you===0
+      ? `<select id="themeSel" aria-label="Thème des personnages" ${busy?'disabled':''}>${V.themes.map(t=>`<option value="${esc(t.id)}" ${t.id===V.theme?'selected':''}>${esc(t.label)}</option>`).join('')}</select>`
+      : `<p>${esc((V.themes.find(t=>t.id===V.theme)||{}).label||'')}</p>`}
+    <p class="tag">Équipage (${n}/6)</p>
     <ul class="crew">${V.players.map((p,i)=>`<li><span class="dot ${p.online?'on':''}"></span>${esc(p.name)}${i===V.you?' (toi)':''}${i===0?' · capitaine':''}</li>`).join('')}</ul>
     ${V.you===0
       ? `<button class="btn" type="button" data-act="start" ${n<2||busy?'disabled':''}>Lever l'ancre</button>${n<2?'<p class="muted">Il faut au moins 2 joueurs.</p>':''}`
@@ -268,7 +269,7 @@ function seatHTML(i){
   const status=p.out?'<span class="pill dead">Hors manche</span>'
     :p.prot?'<span class="pill safe">À l\'abri</span>'
     :active?'<span class="pill now">Joue</span>':'';
-  const last=p.discard.length?ROLES[p.discard[p.discard.length-1]].name:'';
+  const last=p.discard.length?nm(p.discard[p.discard.length-1]):'';
   return `<div class="seat ${active?'active':''} ${p.out?'out':''} ${isMe?'me':''}">
     <div class="who"><span class="dot ${p.online?'on':''}" title="${p.online?'Connecté':'Déconnecté'}"></span><b>${esc(p.name)}${isMe?' (toi)':''}</b>${!p.out&&!isMe&&V.phase!=='lobby'?'<span class="back tiny" title="Une carte en main"></span>':''}</div>
     <div class="coins" aria-label="${p.tokens} doublons sur ${V.goal}">${'●'.repeat(p.tokens)}<i>${'●'.repeat(Math.max(0,V.goal-p.tokens))}</i></div>
@@ -283,16 +284,16 @@ function optionsHTML(){
   let h='';
   if(TARGETED.includes(v)&&!need) h+=`<p class="warn">Aucune cible possible : la carte sera jouée sans effet.</p>`;
   if(need){
-    h+=`<p class="tag">${need===2?'Choisis deux joueurs':'Choisis une cible'}</p><div class="opts">${o.targets.map(i=>
+    h+=`<p class="tag">Choisis une cible</p><div class="opts">${o.targets.map(i=>
       `<button class="opt" type="button" data-act="tgt" data-i="${i}" aria-pressed="${sel.t.includes(i)}">${esc(V.players[i].name)}${i===V.you?' (toi)':''}</button>`).join('')}</div>`;
   }
   if(v===1&&need){
     h+=`<p class="tag">Quel rôle accuses-tu ?</p><div class="opts">${GUESSABLE.map(g=>
       `<button class="opt" type="button" data-act="guess" data-i="${g}" aria-pressed="${sel.guess===g}">${R(g)}</button>`).join('')}</div>`;
   }
-  if(v===9) h+=`<p class="warn">Jouer le Trésor te fait quitter la manche.</p>`;
+  if(v===9) h+=`<p class="warn">Jouer ${nm(9)} te fait quitter la manche.</p>`;
   const ok=sel.t.length===need&&(v!==1||!need||sel.guess!=null);
-  return h+`<div class="row"><button class="btn" type="button" data-act="play" ${ok&&!busy?'':'disabled'}>Jouer ${ROLES[v].name}</button></div>`;
+  return h+`<div class="row"><button class="btn" type="button" data-act="play" ${ok&&!busy?'':'disabled'}>Jouer ${nm(v)}</button></div>`;
 }
 
 function dockHTML(){
@@ -301,22 +302,29 @@ function dockHTML(){
   switch(V.phase){
     case 'play':
       if(V.cur===V.you) return `<p class="prompt mine">À toi de jouer !</p><p class="muted">Touche la carte que tu veux jouer.</p>
-        <div class="hand">${V.hand.map((v,i)=>card(v,'button',`type="button" data-act="pick" data-i="${i}" aria-pressed="${sel.idx===i}"`)).join('')}</div>
+        <div class="hand">${V.hand.map((v,i)=>card(v,'button',`type="button" data-act="pick" data-i="${i}" aria-pressed="${sel.idx===i}" ${V.options[i].locked?'disabled':''}`)).join('')}</div>
+        ${V.options.some(o=>o.locked)?`<p class="warn">Avec ${nm(7)} ou ${nm(5)} en main, tu dois jouer ${nm(8)}.</p>`:''}
         ${sel.idx!=null?optionsHTML():''}`;
       return `<p class="prompt">Au tour de <b>${curName}</b>…</p>${myHand}`;
     case 'carto':
-      if(V.cur===V.you) return `<p class="prompt mine">Carte du dessus de la pioche</p><p class="muted">Toi seul la vois.</p>
-        <div class="hand">${card(V.peek)}</div>
-        <div class="row"><button class="btn" type="button" data-act="carto" data-b="0" ${busy?'disabled':''}>La laisser</button><button class="btn ghost" type="button" data-act="carto" data-b="1" ${busy?'disabled':''}>La glisser dessous</button></div>`;
+      if(V.cur===V.you){
+        const rest=V.hand.map((v,i)=>i).filter(i=>i!==sel.idx);
+        if(sel.flip) rest.reverse();
+        return `<p class="prompt mine">${nm(6)}</p><p class="muted">Touche la carte que tu gardes. Les autres iront sous la pioche.</p>
+        <div class="hand">${V.hand.map((v,i)=>card(v,'button',`type="button" data-act="pick" data-i="${i}" aria-pressed="${sel.idx===i}"`)).join('')}</div>
+        ${sel.idx!=null&&rest.length?`<p class="tag">Sous la pioche, de haut en bas</p><p>${rest.map(i=>R(V.hand[i])).join(' puis ')}</p>`:''}
+        <div class="row">${sel.idx!=null&&rest.length>1?`<button class="btn ghost" type="button" data-act="flip">Inverser l'ordre</button>`:''}
+          <button class="btn" type="button" data-act="carto" ${sel.idx!=null&&!busy?'':'disabled'}>Valider</button></div>`;
+      }
       return `<p class="prompt"><b>${curName}</b> consulte la pioche…</p>${myHand}`;
     case 'roundEnd': case 'over': {
       const r=V.result, many=r.winners.length>1;
       const champs=V.players.filter(q=>q.tokens>=V.goal).map(q=>esc(q.name));
       return `<p class="tag">Fin de la manche ${V.round}</p>
         <h2>${r.winners.map(esc).join(' et ')} ${many?'remportent':'remporte'} un doublon</h2>
-        <p>${esc(r.why)}</p>
-        <ul class="reveal">${r.hands.map(h=>`<li>${h.card!=null?mini(h.card):'<span class="mini">–</span>'} ${esc(h.name)} · ${h.card!=null?ROLES[h.card].name:'hors manche'}</li>`).join('')}
-          <li>${r.aside!=null?mini(r.aside)+' Carte écartée · '+ROLES[r.aside].name:'La carte écartée avait été piochée.'}</li></ul>
+        <p>${esc(r.why)}</p>${r.rat?`<p>${esc(r.rat)} gagne aussi un doublon : seul joueur en lice avec une carte ${nm(0)}.</p>`:''}
+        <ul class="reveal">${r.hands.map(h=>`<li>${h.card!=null?mini(h.card):'<span class="mini">–</span>'} ${esc(h.name)} · ${h.card!=null?nm(h.card):'hors manche'}</li>`).join('')}
+          <li>${r.aside!=null?mini(r.aside)+' Carte écartée · '+nm(r.aside):'La carte écartée avait été piochée.'}</li></ul>
         ${V.phase==='over'
           ? `<p class="win">${champs.join(' et ')} ${champs.length>1?'gagnent':'gagne'} la partie !</p>
              <div class="row"><button class="btn" type="button" data-act="again" ${busy?'disabled':''}>Rejouer avec le même équipage</button><button class="btn ghost" type="button" data-act="leave">Quitter</button></div>`
@@ -362,13 +370,12 @@ app.addEventListener('click',e=>{
   const b=e.target.closest('[data-act]'); if(!b||b.disabled) return;
   const i=+b.dataset.i;
   switch(b.dataset.act){
-    case 'pick': sel={idx:i,t:[],guess:null}; break;
-    case 'tgt':
-      sel.t=V.options[sel.idx].need===2?(sel.t.includes(i)?sel.t.filter(x=>x!==i):[...sel.t,i].slice(-2)):[i];
-      break;
+    case 'pick': sel={...fresh(),idx:i}; break;
+    case 'tgt': sel.t=[i]; break;
     case 'guess': sel.guess=i; break;
+    case 'flip': sel.flip=!sel.flip; break;
+    case 'carto': return send({type:'carto',keep:sel.idx,flip:sel.flip});
     case 'play': return send({type:'play',idx:sel.idx,targets:sel.t,guess:sel.guess});
-    case 'carto': return send({type:'carto',bottom:b.dataset.b==='1'});
     case 'start': case 'next': case 'again': return send({type:b.dataset.act});
     case 'leave': return leave();
     case 'share': {
@@ -381,6 +388,7 @@ app.addEventListener('click',e=>{
   }
   render();
 });
+app.addEventListener('change',e=>{ if(e.target.id==='themeSel') send({type:'theme',id:e.target.value}); });
 app.addEventListener('submit',async e=>{
   e.preventDefault();
   if(busy) return;

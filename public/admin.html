@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0e1b22">
+<meta name="robots" content="noindex">
+<title>Mutinerie · Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pirata+One&family=Alegreya+Sans:wght@400;500;700&display=swap">
+<style>
+/* Même univers que le jeu : une colonne, un panneau par thème, les 10 cartes en grille. */
+:root{
+  --sea:#0e1b22; --deck:#15282e; --plank:#22403f; --bone:#efe6d2; --ink:#1c1a16;
+  --brass:#d6a94e; --blood:#c4493e; --kelp:#7fb59a; --mist:#9db1b0;
+  --f-display:'Pirata One', Georgia, serif; --f-body:'Alegreya Sans', 'Segoe UI', system-ui, sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{background:var(--sea);color:var(--bone);margin:0}
+body{font-family:var(--f-body);font-size:16px;line-height:1.4;padding:16px 16px 40px}
+#app{max-width:1100px;margin:0 auto;display:grid;gap:16px}
+h1,h2{font-family:var(--f-display);font-weight:400;margin:0}
+h1{font-size:clamp(2.4rem,9vw,3.4rem);color:var(--brass);line-height:1}
+h2{font-size:1.7rem}
+p{margin:0}
+.muted{color:var(--mist)}
+.panel{background:var(--deck);border:1px solid var(--plank);border-radius:14px;padding:16px;display:grid;gap:12px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.btn{font:inherit;font-weight:700;padding:9px 16px;border-radius:10px;border:2px solid var(--brass);background:var(--brass);color:var(--ink);cursor:pointer;min-height:42px}
+.btn.ghost{background:transparent;color:var(--brass)}
+.btn.danger{background:transparent;border-color:var(--blood);color:var(--blood)}
+.btn.small{padding:4px 10px;min-height:32px;font-size:.85rem}
+.btn[disabled]{opacity:.4;cursor:not-allowed}
+:focus-visible,label.btn:focus-within{outline:3px solid var(--kelp);outline-offset:2px}
+input[type=text],input[type=password]{font:inherit;padding:9px 11px;border-radius:9px;border:1px solid var(--plank);background:var(--sea);color:var(--bone);width:100%;min-width:0}
+label{font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--mist)}
+.msg{min-height:1.3em}
+.msg.err{color:var(--blood)}
+.msg.ok{color:var(--kelp)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.card{background:var(--bone);color:var(--ink);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:5px;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.pic{width:100%;aspect-ratio:3/2;object-fit:cover;border-radius:7px;background:#d9cfb8;display:grid;place-items:center;color:#6b6457;font-size:.8rem}
+.top{display:flex;justify-content:space-between;align-items:baseline}
+.v{font-family:var(--f-display);font-size:2rem;line-height:1;color:var(--blood)}
+.x{font-weight:700;color:#6b6457}
+.n{font-family:var(--f-display);font-size:1.3rem;line-height:1.05}
+.t{font-size:.82rem;line-height:1.28}
+.card .row{margin-top:auto;gap:6px}
+.card .btn.ghost{color:#6e5020;border-color:#b08a45;text-transform:none;letter-spacing:0}
+.form{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.form .f{display:grid;gap:4px}
+.hint{font-size:.78rem;color:var(--mist)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+const $=s=>document.querySelector(s);
+const app=$('#app');
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ses={ get(){ try{ return sessionStorage.getItem('mutinerie:admin'); }catch(e){ return null; } },
+  set(v){ try{ v==null?sessionStorage.removeItem('mutinerie:admin'):sessionStorage.setItem('mutinerie:admin',v); }catch(e){} } };
+
+let themes=[], pw=ses.get(), edit=null, msg='', msgKind='', busy=false;
+
+async function post(path,body){
+  let r; try{ r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw,...body})}); }
+  catch(e){ throw new Error('Impossible de joindre le serveur.'); }
+  let j={}; try{ j=await r.json(); }catch(e){}
+  if(!r.ok) throw new Error(j.error||'Erreur du serveur.');
+  return j;
+}
+async function run(fn,ok){
+  if(busy) return;
+  busy=true; msg=''; render();
+  try{ const j=await fn(); if(j&&j.themes) themes=j.themes; msg=ok||''; msgKind='ok'; }
+  catch(e){ msg=e.message; msgKind='err'; if(/Mot de passe|tentatives|désactivé/.test(msg)){ pw=null; ses.set(null); } }
+  busy=false; render();
+}
+
+// Redimensionne côté navigateur (max 800 px) pour rester sous la limite du serveur.
+async function shrink(file){
+  const bmp=await createImageBitmap(file);
+  const k=Math.min(1,800/Math.max(bmp.width,bmp.height));
+  const c=document.createElement('canvas'); c.width=Math.round(bmp.width*k); c.height=Math.round(bmp.height*k);
+  c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+  for(const [type,q] of [['image/webp',.85],['image/webp',.7],['image/jpeg',.75],['image/jpeg',.55]]){
+    const url=c.toDataURL(type,q);
+    if(url.startsWith('data:'+type)&&url.length*.75<380*1024) return url;
+  }
+  throw new Error('Image trop lourde, même compressée.');
+}
+
+function cardHTML(t,r,v){
+  const tools=pw?`<div class="row">
+      <label class="btn ghost small">${r.img?'Changer l\'image':'Ajouter une image'}<input class="sr" type="file" accept="image/png,image/jpeg,image/webp" data-act="img" data-id="${esc(t.id)}" data-v="${v}" ${busy?'disabled':''}></label>
+      ${r.img?`<button class="btn danger small" type="button" data-act="noimg" data-id="${esc(t.id)}" data-v="${v}">Retirer</button>`:''}</div>`:'';
+  return `<div class="card">
+    ${r.img?`<img class="pic" src="${esc(r.img)}" alt="Illustration : ${esc(r.name)}">`:'<div class="pic">Pas d\'illustration</div>'}
+    <div class="top"><span class="v">${v}</span><span class="x">×${r.n}</span></div>
+    <span class="n">${esc(r.name)}</span><span class="t">${esc(r.txt)}</span>${tools}</div>`;
+}
+function themeHTML(t){
+  const total=t.roles.reduce((s,r)=>s+r.n,0);
+  return `<section class="panel">
+    <div class="row" style="justify-content:space-between"><div><h2>${esc(t.label)}</h2><p class="muted">${total} cartes · identifiant ${esc(t.id)}</p></div>
+    ${pw?`<div class="row"><button class="btn ghost small" type="button" data-act="edit" data-id="${esc(t.id)}">Renommer les personnages</button>
+      <button class="btn ghost small" type="button" data-act="copy" data-id="${esc(t.id)}">Dupliquer</button>
+      ${t.id!=='pirate'?`<button class="btn danger small" type="button" data-act="del" data-id="${esc(t.id)}">Supprimer</button>`:''}</div>`:''}</div>
+    <div class="cards">${t.roles.map((r,v)=>cardHTML(t,r,v)).join('')}</div></section>`;
+}
+function formHTML(){
+  const base=themes[0];
+  return `<section class="panel" id="formPanel"><h2>${edit.id?'Renommer : '+esc(edit.label):'Nouveau thème'}</h2>
+    <p class="muted">Les effets et le nombre de cartes ne changent pas : seuls les noms des personnages changent. Les illustrations s'ajoutent ensuite sur chaque carte.</p>
+    <form id="themeForm" class="form">
+      <div class="f"><label for="tl">Nom du thème</label><input type="text" id="tl" maxlength="30" required value="${esc(edit.label)}"></div>
+      ${edit.names.map((n,v)=>`<div class="f"><label for="n${v}">Carte ${v} (×${base.roles[v].n})</label>
+        <input type="text" id="n${v}" maxlength="24" required value="${esc(n)}"><span class="hint">${esc(base.roles[v].txt)}</span></div>`).join('')}
+      <div class="row"><button class="btn" type="submit" ${busy?'disabled':''}>Enregistrer</button><button class="btn ghost" type="button" data-act="cancel">Annuler</button></div>
+    </form></section>`;
+}
+function render(){
+  const login=pw?`<div class="row"><span class="muted">Connecté en admin.</span><button class="btn ghost small" type="button" data-act="logout">Se déconnecter</button>
+      ${edit?'':'<button class="btn small" type="button" data-act="new">Créer un thème</button>'}</div>`
+    :`<form id="loginForm" class="row"><label for="pw" class="sr">Mot de passe admin</label><input type="password" id="pw" placeholder="Mot de passe admin" autocomplete="current-password" style="max-width:260px" required><button class="btn" type="submit">Se connecter</button></form>
+      <p class="muted">Sans connexion, tu peux seulement consulter les cartes.</p>`;
+  app.innerHTML=`<section class="panel"><h1>Mutinerie · Admin</h1>
+      <p class="muted">Toutes les cartes du jeu, rôle par rôle, pour chaque thème. <a href="/" style="color:var(--brass)">Retour au jeu</a></p>
+      ${login}<p class="msg ${msgKind}" role="status">${esc(msg)}</p></section>
+    ${edit?formHTML():''}${themes.map(themeHTML).join('')}`;
+}
+
+app.addEventListener('click',e=>{
+  const b=e.target.closest('[data-act]'); if(!b||b.disabled||b.tagName==='INPUT') return;
+  const t=themes.find(x=>x.id===b.dataset.id);
+  switch(b.dataset.act){
+    case 'logout': pw=null; ses.set(null); edit=null; msg=''; return render();
+    case 'new': edit={label:'',names:themes[0].roles.map(r=>r.name)}; break;
+    case 'edit': edit={id:t.id,label:t.label,names:t.roles.map(r=>r.name)}; break;
+    case 'copy': edit={label:(t.label+' (copie)').slice(0,30),names:t.roles.map(r=>r.name)}; break;
+    case 'cancel': edit=null; return render();
+    case 'del':
+      if(!confirm(`Supprimer le thème « ${t.label} » et ses illustrations ?`)) return;
+      return run(()=>post('/api/admin/delete',{id:t.id}),'Thème supprimé.');
+    case 'noimg': return run(()=>post('/api/admin/image',{id:t.id,v:+b.dataset.v,data:null}),'Illustration retirée.');
+    default: return;
+  }
+  msg=''; render(); $('#formPanel').scrollIntoView({behavior:'smooth'}); $('#tl').focus();
+});
+app.addEventListener('change',e=>{
+  const f=e.target; if(f.dataset.act!=='img'||!f.files[0]) return;
+  run(async()=>post('/api/admin/image',{id:f.dataset.id,v:+f.dataset.v,data:await shrink(f.files[0])}),'Illustration enregistrée.');
+});
+app.addEventListener('submit',e=>{
+  e.preventDefault();
+  if(e.target.id==='loginForm'){
+    pw=$('#pw').value;
+    return run(async()=>{ await post('/api/admin/login',{}); ses.set(pw); },'Connecté.');
+  }
+  const theme={id:edit.id,label:$('#tl').value,names:edit.names.map((_,v)=>$('#n'+v).value)};
+  run(async()=>{ const j=await post('/api/admin/theme',{theme}); edit=null; return j; },'Thème enregistré.');
+});
+
+fetch('/api/themes').then(r=>r.json()).then(j=>{ themes=j.themes; render(); })
+  .catch(()=>{ msg='Impossible de charger les thèmes.'; msgKind='err'; render(); });
+render();
+</script>
+</body>
+</html>
