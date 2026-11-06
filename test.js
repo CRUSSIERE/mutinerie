@@ -35,14 +35,15 @@ assert(E.TOTAL_CARDS === 21, 'deck should have 21 cards');
 assert(E.MAX_PLAYERS === 6, 'max 6 joueurs');
 
 // Thèmes : création, validation, choix dans le salon, illustrations, rechargement depuis le disque.
-{
-  const throwsMsg = f => { try { f(); return false; } catch (e) { return typeof e === 'string'; } };
+async function themesTest() {
+  const throwsMsg = async f => { try { await f(); return false; } catch (e) { return typeof e === 'string'; } };
+  await E.loadThemes();
   const gang = ['Indic', 'Porte-flingue', 'Mouchard', 'Caïd', 'Avocat', 'Tueur', 'Comptable', 'Consigliere', 'Veuve', 'Magot'];
   assert(E.themeList()[0].id === 'pirate', 'default theme');
-  assert(throwsMsg(() => E.upsertTheme({ label: '', names: gang })), 'empty label accepted');
-  assert(throwsMsg(() => E.upsertTheme({ label: 'X', names: gang.slice(0, 9) })), '9 names accepted');
-  assert(throwsMsg(() => E.upsertTheme({ label: 'X', names: [...gang.slice(0, 9), 'indic'] })), 'duplicate names accepted');
-  assert(E.upsertTheme({ label: 'Gangsters', names: gang }) === 'gangsters', 'slug id');
+  assert(await throwsMsg(() => E.upsertTheme({ label: '', names: gang })), 'empty label accepted');
+  assert(await throwsMsg(() => E.upsertTheme({ label: 'X', names: gang.slice(0, 9) })), '9 names accepted');
+  assert(await throwsMsg(() => E.upsertTheme({ label: 'X', names: [...gang.slice(0, 9), 'indic'] })), 'duplicate names accepted');
+  assert(await E.upsertTheme({ label: 'Gangsters', names: gang }) === 'gangsters', 'slug id');
   const G = E.newGame(); ['A', 'B'].forEach(n => E.addPlayer(G, n));
   const room = { code: 'T', G, clients: new Set() };
   assert(rejects(G, 1, { type: 'theme', id: 'gangsters' }), 'non-host changed theme');
@@ -52,15 +53,15 @@ assert(E.MAX_PLAYERS === 6, 'max 6 joueurs');
   assert(v.roles[1].name === 'Porte-flingue' && v.roles[8].txt.includes('Consigliere') && v.roles[8].txt.includes('Tueur'), 'theme names in view');
   // Illustration : vrai PNG accepté, faux fichier refusé, suppression du thème = suppression du fichier.
   const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-  assert(throwsMsg(() => E.setImage('gangsters', 3, 'data:image/png;base64,' + Buffer.from('<svg onload=alert(1)>').toString('base64'))), 'fake image accepted');
-  assert(throwsMsg(() => E.setImage('gangsters', 10, png)), 'bad card index accepted');
-  E.setImage('gangsters', 3, png);
+  assert(await throwsMsg(() => E.setImage('gangsters', 3, 'data:image/png;base64,' + Buffer.from('<svg onload=alert(1)>').toString('base64'))), 'fake image accepted');
+  assert(await throwsMsg(() => E.setImage('gangsters', 10, png)), 'bad card index accepted');
+  await E.setImage('gangsters', 3, png);
   assert(/^\/img\/gangsters\/3\?v=\d+$/.test(E.themeList().find(t => t.id === 'gangsters').roles[3].img), 'img url');
   assert(fs.existsSync(path.join(TMP, 'illustrations', 'gangsters-3.png')), 'img file written');
-  E.loadThemes();
+  await E.loadThemes();
   assert(E.themeList().find(t => t.id === 'gangsters').roles[3].img, 'themes reload from disk');
-  assert(throwsMsg(() => E.deleteTheme('pirate')), 'default theme deleted');
-  E.deleteTheme('gangsters');
+  assert(await throwsMsg(() => E.deleteTheme('pirate')), 'default theme deleted');
+  await E.deleteTheme('gangsters');
   assert(!fs.existsSync(path.join(TMP, 'illustrations', 'gangsters-3.png')), 'img file left behind');
   assert(E.view(room, 0).roles[1].name === 'Moussaillon', 'deleted theme falls back to default');
 }
@@ -107,3 +108,4 @@ for (let g = 0; g < 3000; g++) {
   games++;
 }
 console.log(`OK : ${games} parties, ${rounds} manches, ${E.TOTAL_CARDS} cartes conservées, aucune fuite de main.`);
+themesTest().then(() => console.log('OK : thèmes et illustrations (stockage fichier).'), e => { console.error(e); process.exit(1); });

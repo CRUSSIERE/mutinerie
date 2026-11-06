@@ -40,12 +40,12 @@ label{font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--
 .msg.ok{color:var(--kelp)}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
 .card{background:var(--bone);color:var(--ink);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:5px;box-shadow:0 4px 12px rgba(0,0,0,.4)}
-.pic{width:100%;aspect-ratio:3/2;object-fit:cover;border-radius:7px;background:#d9cfb8;display:grid;place-items:center;color:#6b6457;font-size:.8rem}
+.pic{width:100%;height:auto;display:block;border-radius:7px;background:#d9cfb8}
+.pic.empty{aspect-ratio:2/3;display:grid;place-items:center;color:#6b6457;font-size:.8rem}
 .top{display:flex;justify-content:space-between;align-items:baseline}
 .v{font-family:var(--f-display);font-size:2rem;line-height:1;color:var(--blood)}
 .x{font-weight:700;color:#6b6457}
 .n{font-family:var(--f-display);font-size:1.3rem;line-height:1.05}
-.t{font-size:.82rem;line-height:1.28}
 .card .row{margin-top:auto;gap:6px}
 .card .btn.ghost{color:#6e5020;border-color:#b08a45;text-transform:none;letter-spacing:0}
 .form{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
@@ -98,9 +98,9 @@ function cardHTML(t,r,v){
       <label class="btn ghost small">${r.img?'Changer l\'image':'Ajouter une image'}<input class="sr" type="file" accept="image/png,image/jpeg,image/webp" data-act="img" data-id="${esc(t.id)}" data-v="${v}" ${busy?'disabled':''}></label>
       ${r.img?`<button class="btn danger small" type="button" data-act="noimg" data-id="${esc(t.id)}" data-v="${v}">Retirer</button>`:''}</div>`:'';
   return `<div class="card">
-    ${r.img?`<img class="pic" src="${esc(r.img)}" alt="Illustration : ${esc(r.name)}">`:'<div class="pic">Pas d\'illustration</div>'}
+    ${r.img?`<img class="pic" src="${esc(r.img)}" alt="Illustration : ${esc(r.name)}">`:'<div class="pic empty">Pas d\'illustration</div>'}
     <div class="top"><span class="v">${v}</span><span class="x">×${r.n}</span></div>
-    <span class="n">${esc(r.name)}</span><span class="t">${esc(r.txt)}</span>${tools}</div>`;
+    <span class="n" title="${esc(r.txt)}">${esc(r.name)}</span>${tools}</div>`;
 }
 function themeHTML(t){
   const total=t.roles.reduce((s,r)=>s+r.n,0);

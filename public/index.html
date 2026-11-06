@@ -96,12 +96,10 @@ input{font:inherit;font-size:1.05rem;padding:11px 12px;border-radius:10px;border
 .card{width:clamp(132px,42vw,168px);min-height:214px;background:var(--bone);color:var(--ink);border-radius:12px;padding:11px;display:flex;flex-direction:column;gap:5px;text-align:left;border:2px solid var(--bone);font:inherit;box-shadow:0 6px 18px rgba(0,0,0,.45)}
 button.card{cursor:pointer;transition:transform .15s}
 button.card[aria-pressed="true"]{transform:translateY(-8px);outline:3px solid var(--brass);outline-offset:2px}
-.card .pic{width:100%;aspect-ratio:3/2;object-fit:cover;border-radius:7px;background:#d9cfb8}
+.card .pic{width:100%;height:auto;display:block;border-radius:7px;background:#d9cfb8}
 select{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--plank);background:var(--sea);color:var(--bone);min-height:44px}
 .card .v{font-family:var(--f-display);font-size:2.5rem;line-height:1;color:var(--blood)}
 .card .n{font-family:var(--f-display);font-size:1.4rem;line-height:1}
-.card .t{font-size:.84rem;line-height:1.28}
-.card .k{margin-top:auto;font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:#6b6457}
 .opts{display:flex;flex-wrap:wrap;gap:8px}
 .opt{font:inherit;padding:9px 14px;border-radius:99px;border:1px solid var(--brass);background:transparent;color:var(--bone);cursor:pointer;min-height:40px}
 .opt[aria-pressed="true"]{background:var(--brass);color:var(--ink);font-weight:700}
@@ -217,7 +215,7 @@ async function send(body){
 // ---------- Rendu ----------
 function card(v,tag='div',attrs=''){
   const r=ROLES[v];
-  return `<${tag} class="card" ${attrs}>${r.img?`<img class="pic" src="${esc(r.img)}" alt="">`:''}<span class="v">${v}</span><span class="n">${esc(r.name)}</span><span class="t">${esc(r.txt)}</span><span class="k">${r.n} exemplaire${r.n>1?'s':''}</span></${tag}>`;
+  return `<${tag} class="card" ${attrs}>${r.img?`<img class="pic" src="${esc(r.img)}" alt="">`:''}<span class="v">${v}</span><span class="n">${esc(r.name)}</span></${tag}>`;
 }
 const mini=(v,isNew)=>`<span class="mini ${isNew?'new':''}" title="${nm(v)}" aria-label="${R(v)}">${v}</span>`;
 function rules(){
@@ -281,7 +279,7 @@ function seatHTML(i){
 
 function optionsHTML(){
   const v=V.hand[sel.idx], o=V.options[sel.idx], need=o.need;
-  let h='';
+  let h=`<p class="muted"><b>${nm(v)}</b> : ${esc(ROLES[v].txt)}</p>`;
   if(TARGETED.includes(v)&&!need) h+=`<p class="warn">Aucune cible possible : la carte sera jouée sans effet.</p>`;
   if(need){
     h+=`<p class="tag">Choisis une cible</p><div class="opts">${o.targets.map(i=>

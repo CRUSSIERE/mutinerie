@@ -31,14 +31,69 @@ const mustPlaySirene = hand => hand.includes(8) && (hand.includes(5) || hand.inc
 const DEFAULT_ID = 'pirate';
 const defaultTheme = () => ({ id: DEFAULT_ID, label: 'Pirates', imgs: Array(10).fill(null),
   names: ['Rat de cale', 'Moussaillon', 'Vigie', 'Bretteur', 'Cuistot', 'Canonnier', 'Cartographe', 'Second', 'Sirène', 'Trésor'] });
-// Thèmes et illustrations vivent sur disque : pointer THEMES_FILE vers un disque persistant en production.
+// Thèmes et illustrations : Supabase si SUPABASE_URL et SUPABASE_SECRET_KEY sont définis, sinon fichiers locaux.
 const THEMES_FILE = process.env.THEMES_FILE || path.join(__dirname, 'themes.json');
 const IMG_DIR = path.join(path.dirname(THEMES_FILE), 'illustrations');
 const MAX_THEMES = 50, MAX_IMG = 400 * 1024;
 const IMG_TYPES = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' };
 let themes = [defaultTheme()];
 
-// Vérifie un thème venu de l'admin ou du fichier ; renvoie { label, names } propres, ou lève un message.
+const fileStore = {
+  async loadAll() {
+    try { return JSON.parse(fs.readFileSync(THEMES_FILE, 'utf8')); }
+    catch (e) { if (e.code !== 'ENOENT') console.error(`Thèmes illisibles (${THEMES_FILE}) :`, e.message); return []; }
+  },
+  async save(t, next) { fileStore.write(next); },
+  async remove(id, next) { fileStore.write(next); },
+  write(list) {
+    const tmp = THEMES_FILE + '.tmp';     // écriture puis renommage : jamais de fichier à moitié écrit
+    fs.writeFileSync(tmp, JSON.stringify(list, null, 2));
+    fs.renameSync(tmp, THEMES_FILE);
+  },
+  file: (id, v, img) => path.join(IMG_DIR, `${id}-${v}.${img.split(':')[0]}`),
+  async putImg(id, v, img, buf) { fs.mkdirSync(IMG_DIR, { recursive: true }); fs.writeFileSync(fileStore.file(id, v, img), buf); },
+  async delImg(id, v, img) { try { fs.unlinkSync(fileStore.file(id, v, img)); } catch (e) { if (e.code !== 'ENOENT') throw e; } },
+  url: (id, v, img) => `/img/${id}/${v}?v=${img.split(':')[1]}`,
+};
+
+// Table public.mutinerie_themes (RLS active, aucune policy : seule la clé secrète du serveur y accède)
+// et bucket public "mutinerie". Zéro dépendance : appels REST directs.
+const SUPA = (process.env.SUPABASE_URL || '').replace(/\/+$/, ''), SUPA_KEY = process.env.SUPABASE_SECRET_KEY || '';
+const supaStore = {
+  async call(p, opt = {}) {
+    const headers = { apikey: SUPA_KEY, ...opt.headers };
+    if (SUPA_KEY.startsWith('eyJ')) headers.Authorization = `Bearer ${SUPA_KEY}`;   // ancienne clé service_role (JWT)
+    let r;
+    try { r = await fetch(SUPA + p, { ...opt, headers }); }
+    catch (e) { console.error('Supabase injoignable :', e.message); throw 'Stockage indisponible, réessaie dans un instant.'; }
+    if (!r.ok) {
+      console.error(`Supabase ${opt.method || 'GET'} ${p} → ${r.status}`, await r.text().catch(() => ''));
+      throw "Le stockage a refusé l'opération.";
+    }
+    return r;
+  },
+  async loadAll() { return (await supaStore.call('/rest/v1/mutinerie_themes?select=id,label,names,imgs&order=created_at')).json(); },
+  async save(t) {
+    await supaStore.call('/rest/v1/mutinerie_themes', { method: 'POST',
+      body: JSON.stringify([{ id: t.id, label: t.label, names: t.names, imgs: t.imgs }]),
+      headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' } });
+  },
+  async remove(id) { await supaStore.call(`/rest/v1/mutinerie_themes?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }); },
+  // Un chemin par version : jamais d'ancienne image servie depuis un cache.
+  obj: (id, v, img) => { const [ext, ver] = img.split(':'); return `mutinerie/${id}/${v}-${ver}.${ext}`; },
+  async putImg(id, v, img, buf) {
+    await supaStore.call(`/storage/v1/object/${supaStore.obj(id, v, img)}`, { method: 'POST', body: buf,
+      headers: { 'Content-Type': IMG_TYPES[img.split(':')[0]], 'x-upsert': 'true', 'cache-control': '31536000' } });
+  },
+  async delImg(id, v, img) {
+    try { await supaStore.call(`/storage/v1/object/${supaStore.obj(id, v, img)}`, { method: 'DELETE' }); }
+    catch (e) { console.error('Image orpheline laissée dans le bucket :', supaStore.obj(id, v, img)); }   // pas bloquant : le thème reste cohérent
+  },
+  url: (id, v, img) => `${SUPA}/storage/v1/object/public/${supaStore.obj(id, v, img)}`,
+};
+const store = SUPA && SUPA_KEY ? supaStore : fileStore;
+
+// Vérifie un thème venu de l'admin ou du stockage ; renvoie { label, names } propres, ou lève un message.
 function cleanTheme(t) {
   const label = String(t?.label ?? '').replace(/\s+/g, ' ').trim();
   if (!label || label.length > 30) throw 'Le nom du thème doit faire de 1 à 30 caractères.';
@@ -53,10 +108,9 @@ const cleanImgs = a => Array.from({ length: 10 }, (_, v) => {
   const x = Array.isArray(a) ? a[v] : null;
   return typeof x === 'string' && /^(png|jpg|webp):\d{1,15}$/.test(x) ? x : null;
 });
-function loadThemes() {
+async function loadThemes() {
   let saved = [];
-  try { saved = JSON.parse(fs.readFileSync(THEMES_FILE, 'utf8')); }
-  catch (e) { if (e.code !== 'ENOENT') console.error(`Thèmes illisibles (${THEMES_FILE}) :`, e.message); }
+  try { saved = await store.loadAll(); } catch (e) { console.error('Thèmes non chargés, thème de base seulement :', e); }
   themes = [];
   for (const t of Array.isArray(saved) ? saved : []) {
     try {
@@ -66,65 +120,65 @@ function loadThemes() {
   }
   if (!themes.some(t => t.id === DEFAULT_ID)) themes.unshift(defaultTheme());
 }
-function saveThemes() {
-  const tmp = THEMES_FILE + '.tmp';     // écriture puis renommage : jamais de fichier à moitié écrit
-  fs.writeFileSync(tmp, JSON.stringify(themes, null, 2));
-  fs.renameSync(tmp, THEMES_FILE);
-}
 function findTheme(id) {
   const t = themes.find(x => x.id === id);
   if (!t) throw 'Thème introuvable.';
   return t;
 }
+// La mémoire ne change qu'après une sauvegarde réussie : jamais de thème affiché mais perdu.
+async function commit(t) {
+  const next = themes.some(x => x.id === t.id) ? themes.map(x => x.id === t.id ? t : x) : [...themes, t];
+  await store.save(t, next);
+  themes = next;
+}
 // Sans id : crée un thème. Avec id : renomme les personnages d'un thème existant.
-function upsertTheme(input) {
+async function upsertTheme(input) {
   const clean = cleanTheme(input);
-  if (input.id) { Object.assign(findTheme(input.id), clean); return saveThemes(); }
+  if (input.id) { const t = findTheme(input.id); await commit({ ...t, ...clean }); return t.id; }
   if (themes.length >= MAX_THEMES) throw `Pas plus de ${MAX_THEMES} thèmes.`;
   const base = clean.label.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'theme';
   let id = base, k = 2;
   while (themes.some(x => x.id === id)) id = `${base}-${k++}`;
-  themes.push({ id, ...clean, imgs: Array(10).fill(null) });
-  saveThemes();
+  await commit({ id, ...clean, imgs: Array(10).fill(null) });
   return id;
 }
-const imgFile = (id, v, ext) => path.join(IMG_DIR, `${id}-${v}.${ext}`);
-function removeImg(t, v) {
-  if (!t.imgs[v]) return;
-  try { fs.unlinkSync(imgFile(t.id, v, t.imgs[v].split(':')[0])); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-  t.imgs[v] = null;
-}
-function deleteTheme(id) {
+async function deleteTheme(id) {
   const t = findTheme(id);
   if (t.id === DEFAULT_ID) throw 'Le thème de base ne se supprime pas.';
-  for (let v = 0; v < 10; v++) removeImg(t, v);
-  themes = themes.filter(x => x !== t);
-  saveThemes();
+  const next = themes.filter(x => x !== t);
+  await store.remove(id, next);
+  themes = next;
+  for (let v = 0; v < 10; v++) if (t.imgs[v]) await store.delImg(t.id, v, t.imgs[v]);
 }
 // dataUrl null = retirer l'illustration. Le type est vérifié sur les octets, pas sur ce que dit le navigateur.
-function setImage(id, v, dataUrl) {
+async function setImage(id, v, dataUrl) {
   const t = findTheme(id);
   if (!Number.isInteger(v) || v < 0 || v > 9) throw 'Carte inconnue.';
-  if (dataUrl == null) { removeImg(t, v); return saveThemes(); }
-  const m = /^data:image\/[a-z+]+;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl));
-  if (!m) throw 'Image illisible.';
-  const buf = Buffer.from(m[1], 'base64');
-  if (buf.length > MAX_IMG) throw `Image trop lourde (max ${MAX_IMG / 1024} Ko).`;
-  const ext = buf[0] === 0x89 && buf.toString('latin1', 1, 4) === 'PNG' ? 'png'
-    : buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff ? 'jpg'
-    : buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP' ? 'webp' : null;
-  if (!ext) throw 'Formats acceptés : PNG, JPEG ou WebP.';
-  removeImg(t, v);
-  fs.mkdirSync(IMG_DIR, { recursive: true });
-  fs.writeFileSync(imgFile(t.id, v, ext), buf);
-  t.imgs[v] = `${ext}:${Date.now()}`;
-  saveThemes();
+  const old = t.imgs[v], imgs = [...t.imgs];
+  if (dataUrl == null) imgs[v] = null;
+  else {
+    const m = /^data:image\/[a-z+]+;base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl));
+    if (!m) throw 'Image illisible.';
+    const buf = Buffer.from(m[1], 'base64');
+    if (buf.length > MAX_IMG) throw `Image trop lourde (max ${MAX_IMG / 1024} Ko).`;
+    const ext = buf[0] === 0x89 && buf.toString('latin1', 1, 4) === 'PNG' ? 'png'
+      : buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff ? 'jpg'
+      : buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP' ? 'webp' : null;
+    if (!ext) throw 'Formats acceptés : PNG, JPEG ou WebP.';
+    imgs[v] = `${ext}:${Date.now()}`;
+    // En local, un fichier par carte et par format : retirer l'ancien s'il a une autre extension.
+    if (old && store === fileStore && old.split(':')[0] !== ext) await store.delImg(t.id, v, old);
+    await store.putImg(t.id, v, imgs[v], buf);
+  }
+  await commit({ ...t, imgs });
+  // Supabase : un objet par version, l'ancien n'est plus référencé. Local : fichier retiré si plus d'image.
+  if (old && (store === supaStore || dataUrl == null)) await store.delImg(t.id, v, old);
 }
 function themeOf(G) { return themes.find(t => t.id === G.theme) || themes.find(t => t.id === DEFAULT_ID); }
 function rolesOf(theme) {
   return Object.keys(ROLES).map(v => ({ n: ROLES[v].n, name: theme.names[v],
     txt: ROLES[v].txt.replace(/\{(\d)\}/g, (_, k) => theme.names[k]),
-    img: theme.imgs[v] ? `/img/${theme.id}/${v}?v=${theme.imgs[v].split(':')[1]}` : null }));
+    img: theme.imgs[v] ? store.url(theme.id, +v, theme.imgs[v]) : null }));
 }
 const themeList = () => themes.map(t => ({ id: t.id, label: t.label, roles: rolesOf(t) }));
 const N = (G, v) => themeOf(G).names[v];
@@ -386,9 +440,8 @@ const server = http.createServer(async (req, res) => {
     if (im) {
       const t = themes.find(x => x.id === im[1]), img = t && t.imgs[+im[2]];
       if (!img) return json(res, 404, { error: 'Introuvable.' });
-      const ext = img.split(':')[0];
-      res.writeHead(200, { 'Content-Type': IMG_TYPES[ext], 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
-      return fs.createReadStream(imgFile(t.id, +im[2], ext)).on('error', () => res.end()).pipe(res);
+      res.writeHead(200, { 'Content-Type': IMG_TYPES[img.split(':')[0]], 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+      return fs.createReadStream(fileStore.file(t.id, +im[2], img)).on('error', () => res.end()).pipe(res);
     }
     if (req.method === 'GET' && url.pathname === '/healthz') return json(res, 200, { ok: true });
 
@@ -409,9 +462,9 @@ const server = http.createServer(async (req, res) => {
       if (isAdmin) {
         checkAdmin(body.password);
         if (url.pathname === '/api/admin/login') return json(res, 200, { ok: true });
-        if (url.pathname === '/api/admin/theme') upsertTheme(body.theme || {});
-        else if (url.pathname === '/api/admin/delete') deleteTheme(body.id);
-        else if (url.pathname === '/api/admin/image') setImage(body.id, body.v, body.data);
+        if (url.pathname === '/api/admin/theme') await upsertTheme(body.theme || {});
+        else if (url.pathname === '/api/admin/delete') await deleteTheme(body.id);
+        else if (url.pathname === '/api/admin/image') await setImage(body.id, body.v, body.data);
         else return json(res, 404, { error: 'Introuvable.' });
         return json(res, 200, { themes: themeList() });
       }
@@ -452,8 +505,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-loadThemes();
-
 if (require.main === module) {
   // Garde les flux ouverts derrière les proxys, et oublie les salons abandonnés depuis 6 h.
   setInterval(() => {
@@ -464,7 +515,8 @@ if (require.main === module) {
     }
   }, 20000);
   const port = Number(process.env.PORT) || 3000;
-  server.listen(port, () => console.log(`Mutinerie sur http://localhost:${port}`));
+  loadThemes().then(() => server.listen(port, () =>
+    console.log(`Mutinerie sur http://localhost:${port} (thèmes : ${store === supaStore ? 'Supabase' : THEMES_FILE})`)));
 }
 
 module.exports = { themeList, upsertTheme, deleteTheme, setImage, loadThemes, ROLES, TOTAL_CARDS, GUESSABLE, MAX_PLAYERS, mustPlaySirene, newGame, addPlayer, startGame, newRound, play, cartoChoice, validTargets, targetsNeeded, act, view };
